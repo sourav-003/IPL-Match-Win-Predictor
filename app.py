@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import pickle
+import joblib, pickle
 
 # --- Constants ---
 TEAMS = [
@@ -22,13 +22,17 @@ CITIES = [
 # --- Load model safely ---
 @st.cache_resource
 def load_model():
-    with open("pipe.pkl", "rb") as f:
-        return pickle.load(f)
+    try:
+        return joblib.load("pipe.joblib")  # recommended format
+    except FileNotFoundError:
+        with open("pipe.pkl", "rb") as f:  # fallback
+            return pickle.load(f)
 
 try:
     pipe = load_model()
 except Exception as e:
-    st.error("⚠️ Could not load model. Check that pipe.pkl exists and matches your Python/sklearn versions.")
+    st.error("⚠️ Could not load model. Make sure pipe.joblib/pipe.pkl exists and matches your Python & scikit-learn versions.")
+    st.exception(e)
     st.stop()
 
 # --- UI ---
@@ -53,7 +57,6 @@ with col5:
 
 # --- Prediction ---
 if st.button("Predict Probability"):
-    # Validation
     if batting_team == bowling_team:
         st.error("Batting and bowling team cannot be the same.")
         st.stop()
@@ -63,7 +66,7 @@ if st.button("Predict Probability"):
     balls_left = max(0, 120 - balls_bowled)
     wickets_left = 10 - wickets_fallen
 
-    # Handle CRR/RRR safely
+    # Handle CRR & RRR
     crr = score / overs if overs > 0 else 0.0
     rrr = (runs_left * 6 / balls_left) if balls_left > 0 else (0.0 if runs_left == 0 else float("inf"))
 
@@ -80,14 +83,13 @@ if st.button("Predict Probability"):
         "req_run_rate": 0.0 if not np.isfinite(rrr) else rrr,
     }])
 
-    # Predict
     try:
         result = pipe.predict_proba(input_df)[0]
         lossprob, winprob = float(result[0]), float(result[1])
 
-        st.subheader("Result")
-        st.metric(label=f"{batting_team} win probability", value=f"{round(winprob*100)}%")
-        st.metric(label=f"{bowling_team} win probability", value=f"{round(lossprob*100)}%")
+        st.subheader("📊 Prediction Result")
+        st.metric(label=f"{batting_team} Win Probability", value=f"{round(winprob*100)}%")
+        st.metric(label=f"{bowling_team} Win Probability", value=f"{round(lossprob*100)}%")
         st.caption(f"Required Run Rate: {round(rrr,2) if np.isfinite(rrr) else '∞'}   •   Balls Left: {balls_left}")
 
         st.progress(min(1.0, max(0.0, winprob)))
